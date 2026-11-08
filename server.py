@@ -68,7 +68,7 @@ def analyze(payload: AnalysisRequest):
     body = json.dumps({"contents":[{"parts":[{"text":prompt}]}],"generationConfig":{"responseMimeType":"application/json", "temperature":0.3}}).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json", "x-goog-api-key":key}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=120) as response:
             raw = json.load(response)
         text = raw["candidates"][0]["content"]["parts"][0]["text"]
         result = json.loads(text)
