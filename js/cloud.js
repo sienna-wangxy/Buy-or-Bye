@@ -14,10 +14,10 @@
     return JSON.stringify(x);
   }
 
-  // Copy to upload: the owner's private decision (bought / skipped) stays on this device only
+  // Copy the post and its final decision to the shared server.
   function publicCopy(c) {
     const copy = JSON.parse(JSON.stringify(c));
-    delete copy.decision;
+    // The decision is part of the shared post, but only shown to eligible viewers in the UI.
     return copy;
   }
 
@@ -72,7 +72,7 @@
     const mine = {};
     state.cases.forEach(c => { mine[c.id] = c; });
     const fresh = data.cases.map(c => {
-      if (mine[c.id] && mine[c.id].decision) c.decision = mine[c.id].decision;   // keep the private decision from this device
+      // Server is the shared source of truth for final decisions.
       lastSynced[String(c.id)] = stable(publicCopy(c));
       return c;
     });
