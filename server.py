@@ -6,13 +6,20 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Header
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
 app = FastAPI(title="Buy or Bye? AI")
+@app.middleware("http")
+async def always_fresh(request, call_next):
+    # Browsers must check for a newer file every time, so a new deploy shows up right away.
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
 app.mount("/css", StaticFiles(directory=ROOT / "css"), name="css")
 app.mount("/js", StaticFiles(directory=ROOT / "js"), name="js")
 
@@ -104,24 +111,32 @@ def analyze(payload: AnalysisRequest):
 # ===== Shared posts and votes (kept in this server's memory) =====
 # Everyone who opens the site sees the same posts.
 # Data is lost when the server restarts or is redeployed (fine for a demo).
-SHARED = {"version": int(time.time() * 1000), "cases": {}}  # unique start number for every server start
+BOOT = str(int(time.time() * 1000))  # a new id every time the server starts (every deploy)
+SHARED = {"version": 0, "cases": {}}
 LOCK = threading.Lock()
 MAX_CASE_BYTES = 1_500_000  # about one compressed photo per post
 
 def _bump():
     SHARED["version"] += 1
 
+def _check_boot(x_boot):
+    # Pages that synced with an older server (before a redeploy) must reload first,
+    # so they can never upload their old posts again.
+    if x_boot != BOOT:
+        raise HTTPException(status_code=409, detail="The server restarted. Reloading posts.")
+
 @app.get("/api/cases")
 def list_cases():
     with LOCK:
-        return {"version": SHARED["version"], "cases": list(SHARED["cases"].values())}
+        return {"boot": BOOT, "version": SHARED["version"], "cases": list(SHARED["cases"].values())}
 
 @app.get("/api/version")
 def cases_version():
-    return {"version": SHARED["version"]}
+    return {"boot": BOOT, "version": SHARED["version"]}
 
 @app.put("/api/cases/{case_id}")
-def save_case(case_id: str, case: dict = Body(...)):
+def save_case(case_id: str, case: dict = Body(...), x_boot: str = Header(default="")):
+    _check_boot(x_boot)
     if len(json.dumps(case)) > MAX_CASE_BYTES:
         raise HTTPException(status_code=413, detail="Post is too large. Try a smaller photo.")
     with LOCK:
@@ -130,7 +145,8 @@ def save_case(case_id: str, case: dict = Body(...)):
     return {"ok": True}
 
 @app.post("/api/cases/{case_id}/votes")
-def add_votes(case_id: str, votes: list[dict] = Body(...)):
+def add_votes(case_id: str, votes: list[dict] = Body(...), x_boot: str = Header(default="")):
+    _check_boot(x_boot)
     with LOCK:
         case = SHARED["cases"].get(case_id)
         if case is None:
@@ -140,7 +156,8 @@ def add_votes(case_id: str, votes: list[dict] = Body(...)):
     return {"ok": True}
 
 @app.delete("/api/cases/{case_id}")
-def delete_case(case_id: str):
+def delete_case(case_id: str, x_boot: str = Header(default="")):
+    _check_boot(x_boot)
     with LOCK:
         SHARED["cases"].pop(case_id, None)
         _bump()

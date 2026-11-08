@@ -4,6 +4,7 @@
 (function () {
   const lastSynced = {};   // what each post looks like on the server, used to find changed posts
   let version = -1;        // server data version; it changes when anyone posts or votes
+  let boot = null;         // server start id; it changes after every deploy
 
   // Turn an object into text with sorted keys, so the same content always gives the same text
   function stable(x) {
@@ -31,16 +32,17 @@
   function send(method, url, body) {
     return fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Boot": boot || "" },
       body: body === undefined ? undefined : JSON.stringify(body)
     }).then(r => {
+      if (r.status === 409) { version = -1; return; }   // server restarted: download fresh posts on the next check
       if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.status); });
     }).catch(e => toast("Cloud save failed: " + e.message));
   }
 
   // Called by persist(): upload every post that changed
   window.cloudSync = function () {
-    if (version < 0) return;   // wait until the first download from the server
+    if (version < 0 || !boot) return;   // wait until the first download from the server
     const stillHere = new Set();
     for (const c of state.cases) {
       const id = String(c.id);
@@ -64,6 +66,10 @@
   // Download all posts from the server and replace the local list
   async function pull() {
     const data = await fetch("/api/cases").then(r => r.json());
+    if (data.boot !== boot) {          // new server (after a deploy): forget what the old server had
+      for (const id of Object.keys(lastSynced)) delete lastSynced[id];
+      boot = data.boot;
+    }
     version = data.version;
     if (!data.cases.length) {          // server is empty (just started): start again from the example posts only
       state.cases = SEED.map(c => ({ ...c }));
@@ -93,8 +99,8 @@
     if (checking) return;
     checking = true;
     try {
-      const v = (await fetch("/api/version").then(r => r.json())).version;
-      if (v !== version) await pull();
+      const d = await fetch("/api/version").then(r => r.json());
+      if (d.boot !== boot || d.version !== version) await pull();
     } catch (e) { /* server unreachable for now: keep using local data */ }
     checking = false;
   }
