@@ -1,10 +1,11 @@
 """Buy or Bye? AI backend. Run with uvicorn server:app --reload."""
 import json
 import os
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -78,3 +79,49 @@ def analyze(payload: AnalysisRequest):
         raise HTTPException(status_code=502, detail=f"AI provider returned HTTP {e.code}. Check your key, model and quota") from e
     except (ValueError, KeyError, IndexError, TimeoutError, urllib.error.URLError) as e:
         raise HTTPException(status_code=502, detail=f"Could not generate AI analysis: {type(e).__name__}") from e
+
+
+# ===== Shared posts and votes (kept in this server's memory) =====
+# Everyone who opens the site sees the same posts.
+# Data is lost when the server restarts or is redeployed (fine for a demo).
+SHARED = {"version": 0, "cases": {}}
+LOCK = threading.Lock()
+MAX_CASE_BYTES = 1_500_000  # about one compressed photo per post
+
+def _bump():
+    SHARED["version"] += 1
+
+@app.get("/api/cases")
+def list_cases():
+    with LOCK:
+        return {"version": SHARED["version"], "cases": list(SHARED["cases"].values())}
+
+@app.get("/api/version")
+def cases_version():
+    return {"version": SHARED["version"]}
+
+@app.put("/api/cases/{case_id}")
+def save_case(case_id: str, case: dict = Body(...)):
+    if len(json.dumps(case)) > MAX_CASE_BYTES:
+        raise HTTPException(status_code=413, detail="Post is too large. Try a smaller photo.")
+    with LOCK:
+        SHARED["cases"][case_id] = case
+        _bump()
+    return {"ok": True}
+
+@app.post("/api/cases/{case_id}/votes")
+def add_votes(case_id: str, votes: list[dict] = Body(...)):
+    with LOCK:
+        case = SHARED["cases"].get(case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        case.setdefault("votes", []).extend(votes)  # append, so two people voting never overwrite each other
+        _bump()
+    return {"ok": True}
+
+@app.delete("/api/cases/{case_id}")
+def delete_case(case_id: str):
+    with LOCK:
+        SHARED["cases"].pop(case_id, None)
+        _bump()
+    return {"ok": True}

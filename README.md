@@ -73,3 +73,20 @@ Shopping Dilemma dialogs now have Previous/Next arrow buttons in the sticky head
 - My Space: **Saved** replaces Watchlist; Creators feed removed.
 - Courtroom audience filters: **All posts** / **Following people** above category chips.
 - Following a creator or saving a post keeps the current case modal scroll position.
+
+## V26 shared data + Cloud Run
+- Posts and votes are now shared through the Python server (`/api/cases`), so every device sees the same courtroom. `js/cloud.js` syncs every 3 seconds.
+- New votes are appended on the server, so two people voting at once never overwrite each other.
+- The owner's private decision (bought / skipped), accounts, saved posts and follows still stay in each browser.
+- Shared data lives in server memory: it resets when the server restarts or is redeployed. Do not redeploy right before a demo.
+
+Deploy (run in the repo root):
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud run deploy buy-or-bye --source . --region us-east1 --allow-unauthenticated --max-instances 1 --min-instances 1 --set-env-vars GEMINI_API_KEY=YOUR_KEY,GEMINI_MODEL=gemini-2.5-flash
+```
+
+`--max-instances 1` keeps everyone on the same server. `--min-instances 1` keeps it running so data is not lost when idle. After the event: `gcloud run services update buy-or-bye --region us-east1 --min-instances 0`.
