@@ -20,7 +20,6 @@ export GEMINI_API_KEY="YOUR_KEY"  # Windows PowerShell: $env:GEMINI_API_KEY="YOU
 uvicorn server:app --reload
 ```
 
-Open http://127.0.0.1:8000 (NOT index.html via file://).
 
 Go to My Space > My Posts > Manage > **Analyze my case**. The owner-only AI advisor reads that post's votes, comments, budget and suggested dupes, then returns reasons to buy/skip and possible alternatives. To refresh after new votes or dupes, click Refresh analysis.
 
