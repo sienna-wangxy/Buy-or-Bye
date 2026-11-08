@@ -104,7 +104,7 @@ def analyze(payload: AnalysisRequest):
 # ===== Shared posts and votes (kept in this server's memory) =====
 # Everyone who opens the site sees the same posts.
 # Data is lost when the server restarts or is redeployed (fine for a demo).
-SHARED = {"version": 0, "cases": {}}
+SHARED = {"version": int(time.time() * 1000), "cases": {}}  # unique start number for every server start
 LOCK = threading.Lock()
 MAX_CASE_BYTES = 1_500_000  # about one compressed photo per post
 

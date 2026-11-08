@@ -65,8 +65,12 @@
   async function pull() {
     const data = await fetch("/api/cases").then(r => r.json());
     version = data.version;
-    if (!data.cases.length) {          // server is empty (just started): upload the example posts
+    if (!data.cases.length) {          // server is empty (just started): start again from the example posts only
+      state.cases = SEED.map(c => ({ ...c }));
+      for (const id of Object.keys(lastSynced)) delete lastSynced[id];
       window.cloudSync();
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      render();
       return;
     }
     const mine = {};
@@ -84,11 +88,15 @@
   }
 
   // Every 3 seconds, ask the server for its version; download again if it changed
+  let checking = false;   // never run two checks at the same time
   async function check() {
+    if (checking) return;
+    checking = true;
     try {
       const v = (await fetch("/api/version").then(r => r.json())).version;
       if (v !== version) await pull();
     } catch (e) { /* server unreachable for now: keep using local data */ }
+    checking = false;
   }
 
   check();
